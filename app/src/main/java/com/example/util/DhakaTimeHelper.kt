@@ -85,4 +85,40 @@ object DhakaTimeHelper {
             deadlineHHmm
         }
     }
+
+    /**
+     * Converts a "yyyy-MM-dd" date string into a clean, human-readable format like "10 Nov 2026".
+     * If parsing fails, returns the original string gracefully.
+     */
+    fun formatReadableDate(dateString: String): String {
+        if (dateString.isBlank()) return ""
+        return try {
+            val sdfIn = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                timeZone = DHAKA_ZONE
+            }
+            val d = sdfIn.parse(dateString.trim()) ?: return dateString
+            val sdfOut = SimpleDateFormat("dd MMM yyyy", Locale.US).apply {
+                timeZone = DHAKA_ZONE
+            }
+            sdfOut.format(d)
+        } catch (_: Exception) {
+            dateString
+        }
+    }
+
+    fun shiftDate(dateString: String, days: Int): String {
+        return try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                timeZone = DHAKA_ZONE
+            }
+            val d = sdf.parse(dateString.trim()) ?: return dateString
+            val cal = Calendar.getInstance(DHAKA_ZONE).apply {
+                time = d
+                add(Calendar.DAY_OF_YEAR, days)
+            }
+            sdf.format(cal.time)
+        } catch (_: Exception) {
+            dateString
+        }
+    }
 }

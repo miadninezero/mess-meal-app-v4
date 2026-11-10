@@ -21,10 +21,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.util.DhakaTimeHelper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -145,7 +148,7 @@ fun DepositsScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$totalDeposits",
+                            text = "৳${totalDeposits.toInt()}",
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
@@ -223,8 +226,8 @@ fun DepositsScreen(
             AddDepositDialog(
                 members = members,
                 onDismiss = { showAddDialog = false },
-                onAdd = { memberId, memberName, amount, method, notes ->
-                    viewModel.addDeposit(memberId, memberName, amount, method, notes)
+                onAdd = { memberId, memberName, amount, method, notes, date ->
+                    viewModel.addDeposit(memberId, memberName, amount, method, notes, date)
                     showAddDialog = false
                 }
             )
@@ -281,67 +284,102 @@ private fun DepositCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = deposit.memberName.ifBlank { "Member" },
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = deposit.paymentMethod,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
                         Text(
-                            text = deposit.date,
+                            text = deposit.paymentMethod,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = DhakaTimeHelper.formatReadableDate(deposit.date),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                     if (deposit.notes.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = deposit.notes,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "+${deposit.amount}",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-                if (canEdit) {
-                    IconButton(onClick = onEdit) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit Deposit",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Text(
+                        text = "+৳${deposit.amount.toInt()}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
-                if (canDelete) {
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
+
+                if (canEdit || canDelete) {
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (canEdit) {
+                            IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Edit Deposit",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        if (canDelete) {
+                            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -405,7 +443,7 @@ private fun EditDepositDialog(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    label = { Text("Deposit Amount") },
+                    label = { Text("Deposit Amount (৳)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().testTag("edit_deposit_amount_input"),
                     singleLine = true
@@ -415,9 +453,32 @@ private fun EditDepositDialog(
                     value = dateText,
                     onValueChange = { dateText = it },
                     label = { Text("Date (YYYY-MM-DD)") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val today = DhakaTimeHelper.getTodayDhakaDate()
+                    val yesterday = DhakaTimeHelper.shiftDate(today, -1)
+                    FilterChip(
+                        selected = dateText == today,
+                        onClick = { dateText = today },
+                        label = { Text("Today", style = MaterialTheme.typography.labelSmall) }
+                    )
+                    FilterChip(
+                        selected = dateText == yesterday,
+                        onClick = { dateText = yesterday },
+                        label = { Text("Yesterday", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
 
                 Text("Payment Channel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
 
@@ -476,12 +537,13 @@ private fun EditDepositDialog(
 private fun AddDepositDialog(
     members: List<Member>,
     onDismiss: () -> Unit,
-    onAdd: (memberId: String, memberName: String, amount: Double, method: String, notes: String) -> Unit
+    onAdd: (memberId: String, memberName: String, amount: Double, method: String, notes: String, date: String) -> Unit
 ) {
     var selectedMember by remember { mutableStateOf(members.firstOrNull()) }
     var amountText by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf("Cash") }
     var notesText by remember { mutableStateOf("") }
+    var dateText by remember { mutableStateOf(DhakaTimeHelper.getTodayDhakaDate()) }
     var expandedMemberDropdown by remember { mutableStateOf(false) }
 
     val methods = listOf("Cash", "bKash / Mobile", "Bank Transfer", "UPI")
@@ -525,11 +587,42 @@ private fun AddDepositDialog(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    label = { Text("Deposit Amount") },
+                    label = { Text("Deposit Amount (৳)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().testTag("deposit_amount_input"),
                     singleLine = true
                 )
+
+                OutlinedTextField(
+                    value = dateText,
+                    onValueChange = { dateText = it },
+                    label = { Text("Date (YYYY-MM-DD)") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val today = DhakaTimeHelper.getTodayDhakaDate()
+                    val yesterday = DhakaTimeHelper.shiftDate(today, -1)
+                    FilterChip(
+                        selected = dateText == today,
+                        onClick = { dateText = today },
+                        label = { Text("Today", style = MaterialTheme.typography.labelSmall) }
+                    )
+                    FilterChip(
+                        selected = dateText == yesterday,
+                        onClick = { dateText = yesterday },
+                        label = { Text("Yesterday", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
 
                 Text("Payment Channel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
 
@@ -558,7 +651,7 @@ private fun AddDepositDialog(
                     val amount = amountText.toDoubleOrNull() ?: 0.0
                     val member = selectedMember
                     if (amount > 0 && member != null) {
-                        onAdd(member.id, member.displayName, amount, paymentMethod, notesText.trim())
+                        onAdd(member.id, member.displayName, amount, paymentMethod, notesText.trim(), dateText.trim())
                     }
                 },
                 enabled = (amountText.toDoubleOrNull() ?: 0.0) > 0 && selectedMember != null,

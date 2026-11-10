@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,11 +22,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,12 +59,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.BazaarExpense
 import com.example.ui.MessViewModel
+import com.example.util.DhakaTimeHelper
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,13 +124,15 @@ fun BazaarLogScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            // Total Banner
+            // Total Banner with dual metrics and high contrast
+            val myTotalBazaar = bazaarExpenses.filter { it.buyerMemberId == myMemberId }.sumOf { it.amount }
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.elevatedCardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -126,24 +141,30 @@ fun BazaarLogScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "TOTAL BAZAAR EXPENDITURE",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "৳${totalBazaar.toInt()}",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$totalBazaar",
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            text = "My purchases: ৳${myTotalBazaar.toInt()}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                     }
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(52.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -158,15 +179,26 @@ fun BazaarLogScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Category Filter Chips
+            // Category Filter Chips with visual icons
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(categories) { cat ->
+                    val isSelected = selectedCategory == cat
+                    val icon = when (cat.lowercase(Locale.ROOT)) {
+                        "groceries" -> Icons.Default.ShoppingCart
+                        "meat & fish" -> Icons.Default.Restaurant
+                        "vegetables" -> Icons.Default.Eco
+                        "spices" -> Icons.Default.LocalFireDepartment
+                        else -> Icons.Default.ShoppingBag
+                    }
                     FilterChip(
-                        selected = selectedCategory == cat,
+                        selected = isSelected,
                         onClick = { selectedCategory = cat },
-                        label = { Text(cat) }
+                        leadingIcon = if (cat != "All") {
+                            { Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        label = { Text(cat, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
                     )
                 }
             }
@@ -242,6 +274,16 @@ fun BazaarLogScreen(
     }
 }
 
+fun getBazaarCategoryStyle(category: String): Triple<ImageVector, Color, Color> {
+    return when (category.lowercase(Locale.ROOT)) {
+        "groceries" -> Triple(Icons.Default.ShoppingCart, Color(0xFFE65100), Color(0xFFFFF3E0))
+        "meat & fish" -> Triple(Icons.Default.Restaurant, Color(0xFFC62828), Color(0xFFFFEBEE))
+        "vegetables" -> Triple(Icons.Default.Eco, Color(0xFF2E7D32), Color(0xFFE8F5E9))
+        "spices" -> Triple(Icons.Default.LocalFireDepartment, Color(0xFFD84315), Color(0xFFFBE9E7))
+        else -> Triple(Icons.Default.ShoppingBag, Color(0xFF5E35B1), Color(0xFFEDE7F6))
+    }
+}
+
 @Composable
 private fun BazaarExpenseCard(
     expense: BazaarExpense,
@@ -250,78 +292,154 @@ private fun BazaarExpenseCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
+    val (catIcon, catColor, _) = getBazaarCategoryStyle(expense.category)
+
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+        shadowElevation = 1.5.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Category Icon Avatar
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(catColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = catIcon,
+                    contentDescription = expense.category,
+                    tint = catColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = expense.itemsDescription.ifBlank { "Market Purchase" },
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
+                        shape = RoundedCornerShape(6.dp),
+                        color = catColor.copy(alpha = 0.12f)
                     ) {
                         Text(
                             text = expense.category,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = catColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Buyer: ${expense.buyerName}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = expense.buyerName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.outline
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = expense.date,
+                        text = DhakaTimeHelper.formatReadableDate(expense.date),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "${expense.amount}",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-                if (canEdit) {
-                    IconButton(onClick = onEdit) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit Bazaar Expense",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                ) {
+                    Text(
+                        text = "৳${expense.amount.toInt()}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                 }
-                if (canDelete) {
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
+
+                if (canEdit || canDelete) {
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (canEdit) {
+                            IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Edit Bazaar Expense",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        if (canDelete) {
+                            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -369,9 +487,32 @@ private fun EditBazaarDialog(
                     value = dateText,
                     onValueChange = { dateText = it },
                     label = { Text("Date (YYYY-MM-DD)") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val today = DhakaTimeHelper.getTodayDhakaDate()
+                    val yesterday = DhakaTimeHelper.shiftDate(today, -1)
+                    FilterChip(
+                        selected = dateText == today,
+                        onClick = { dateText = today },
+                        label = { Text("Today", style = MaterialTheme.typography.labelSmall) }
+                    )
+                    FilterChip(
+                        selected = dateText == yesterday,
+                        onClick = { dateText = yesterday },
+                        label = { Text("Yesterday", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
 
                 Text(
                     text = "Category",
@@ -461,9 +602,32 @@ private fun AddBazaarDialog(
                     value = dateText,
                     onValueChange = { dateText = it },
                     label = { Text("Date (YYYY-MM-DD)") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val today = DhakaTimeHelper.getTodayDhakaDate()
+                    val yesterday = DhakaTimeHelper.shiftDate(today, -1)
+                    FilterChip(
+                        selected = dateText == today,
+                        onClick = { dateText = today },
+                        label = { Text("Today", style = MaterialTheme.typography.labelSmall) }
+                    )
+                    FilterChip(
+                        selected = dateText == yesterday,
+                        onClick = { dateText = yesterday },
+                        label = { Text("Yesterday", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
 
                 Text(
                     text = "Category",

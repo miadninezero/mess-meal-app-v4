@@ -1577,9 +1577,11 @@ private fun DateSwitcher(
                 Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = currentDate + (if (isFriday) " (Friday)" else ""),
+                    text = DhakaTimeHelper.formatReadableDate(currentDate) + (if (isFriday) " (Fri)" else ""),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
 

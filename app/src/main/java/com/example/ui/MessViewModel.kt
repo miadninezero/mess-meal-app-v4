@@ -631,7 +631,8 @@ class MessViewModel(
         memberName: String,
         amount: Double,
         paymentMethod: String,
-        notes: String
+        notes: String,
+        date: String = todayDhakaDate
     ) {
         val messId = _selectedMessId.value
         if (messId.isBlank()) return
@@ -645,7 +646,7 @@ class MessViewModel(
                     memberId = memberId,
                     memberName = memberName,
                     amount = amount,
-                    date = todayDhakaDate,
+                    date = date.ifBlank { todayDhakaDate },
                     paymentMethod = paymentMethod,
                     notes = notes
                 )
