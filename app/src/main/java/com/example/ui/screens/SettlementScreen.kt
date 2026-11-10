@@ -23,11 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,12 +73,14 @@ import com.example.ui.MessViewModel
 @Composable
 fun SettlementScreen(
     viewModel: MessViewModel,
+    onNavigateToSharedBills: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val mess by viewModel.currentMess.collectAsState()
     val summary by viewModel.summary.collectAsState()
     val utilityBills by viewModel.utilityBills.collectAsState()
+    val sharedBills by viewModel.sharedBills.collectAsState()
     val isManager by viewModel.isManager.collectAsState()
     val auditLogs by viewModel.auditLogs.collectAsState()
 
@@ -94,10 +96,11 @@ fun SettlementScreen(
             appendLine("📋 ${mess?.name ?: "MESS MEAL"} - FINAL SETTLEMENT")
             appendLine("Month: ${mess?.activeMonth ?: "Current"}")
             appendLine("════════════════════════════════")
-            appendLine("• Total Bazaar: ${summary.totalBazaarCost}")
+            appendLine("• Total Bazaar (Groceries): ${summary.totalBazaarCost}")
             appendLine("• Total Confirmed Meal Units: ${summary.totalMeals} units")
             appendLine("• Final Meal Rate: ${summary.mealRate} / unit")
-            appendLine("• Total Utility Bills (Chef & Shared): ${summary.totalUtilities}")
+            appendLine("• Shared Bills & Fixed Costs: ৳${summary.totalSharedBills} (Collected: ৳${summary.totalSharedBillsCollected}, Outstanding: ৳${summary.totalSharedBillsUnpaid})")
+            appendLine("• Legacy Utilities: ${summary.totalUtilities}")
             appendLine("• Total Member Deposits: ${summary.totalDeposits}")
             appendLine("• Mess Reserve Balance: ${summary.remainingFund}")
             appendLine("────────────────────────────────")
@@ -107,8 +110,10 @@ fun SettlementScreen(
                 appendLine("👤 ${s.memberName}")
                 val breakdown = if (s.guestUnits > 0) " (Member: ${s.memberUnits}, Guest: ${s.guestUnits})" else ""
                 appendLine("   Confirmed Meal Units: ${s.totalMeals} units$breakdown | Meal Cost: ${s.mealCost}")
-                appendLine("   Fixed Utilities: ${s.utilityCost} | Total Expense: ${s.totalCost}")
-                appendLine("   Total Deposit: ${s.totalDeposit}")
+                if (s.sharedBillsTotalShare > 0) {
+                    appendLine("   Shared Bills: Share ৳${s.sharedBillsTotalShare} | Paid ৳${s.sharedBillsPaid} | Unpaid ৳${s.sharedBillsUnpaid}")
+                }
+                appendLine("   Total Expense: ${s.totalCost} | Deposit: ${s.totalDeposit}")
                 appendLine("   Status: $status")
                 appendLine("")
             }
@@ -207,8 +212,28 @@ fun SettlementScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Fixed Utilities (Cook/Bills):", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Text("${summary.totalUtilities}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("Shared Bills Total:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("৳${summary.totalSharedBills.toInt()}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Shared Bills Due:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(
+                                if (summary.totalSharedBillsUnpaid <= 0) "All Paid" else "৳${summary.totalSharedBillsUnpaid.toInt()} Unpaid",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (summary.totalSharedBillsUnpaid <= 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        if (summary.totalUtilities > 0) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Legacy Utilities:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("${summary.totalUtilities}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -241,26 +266,24 @@ fun SettlementScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Shared Bills & Fixed Costs",
+                            text = "Shared Bills",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "Cook salary, WiFi, gas, electricity & maid (split equally among all members)",
+                            text = "Chef, gas, wifi & utilities (separated from grocery)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (isManager) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        FilledTonalButton(
-                            onClick = { showAddBillDialog = true },
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Bill", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                        }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = onNavigateToSharedBills,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Manage Bills (${sharedBills.size})", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                     }
                 }
             }
@@ -279,7 +302,7 @@ fun SettlementScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.ReceiptLong,
+                                Icons.AutoMirrored.Filled.ReceiptLong,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.size(24.dp)
@@ -611,9 +634,27 @@ private fun MemberSettlementCard(settlement: MemberSettlement) {
                 Text("Meal Cost (${settlement.totalMeals} × rate):", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${settlement.mealCost}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Shared Utilities & Chef Share:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${settlement.utilityCost}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+            if (settlement.utilityCost > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Legacy Utility Share:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${settlement.utilityCost}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+            if (settlement.sharedBillsTotalShare > 0) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Shared Bills Assigned:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("৳${settlement.sharedBillsTotalShare}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("  ↳ Paid Directly:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    Text("৳${settlement.sharedBillsPaid}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.primary)
+                }
+                if (settlement.sharedBillsUnpaid > 0) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("  ↳ Due in Settlement:", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
+                        Text("৳${settlement.sharedBillsUnpaid}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Total Member Expense:", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)

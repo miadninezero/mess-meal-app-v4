@@ -18,6 +18,11 @@ import com.example.data.model.Member
 import com.example.data.model.Mess
 import com.example.data.model.UserProfile
 import com.example.data.model.UtilityBill
+import com.example.data.model.BillAllocationType
+import com.example.data.model.BillPaymentRecord
+import com.example.data.model.BillPaymentStatus
+import com.example.data.model.InAppNotification
+import com.example.data.model.SharedBill
 import com.example.data.repository.MessRepository
 import com.example.util.DhakaTimeHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -111,6 +116,22 @@ class MessViewModel(
         if (messId.isNotBlank()) repository.observeUtilityBills(messId) else flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val sharedBills: StateFlow<List<SharedBill>> = _selectedMessId.flatMapLatest { messId ->
+        if (messId.isNotBlank()) repository.observeSharedBills(messId) else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notifications: StateFlow<List<InAppNotification>> = combine(_selectedMessId, members) { messId, mems ->
+        val currentMember = mems.firstOrNull { it.userId == currentUserId }
+        val memberId = currentMember?.id ?: currentUserId
+        Pair(messId, memberId)
+    }.flatMapLatest { (messId, memberId) ->
+        if (messId.isNotBlank()) repository.observeInAppNotifications(messId, memberId) else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val unreadNotificationsCount: StateFlow<Int> = notifications.map { list ->
+        list.count { !it.isRead }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val auditLogs: StateFlow<List<AuditLog>> = _selectedMessId.flatMapLatest { messId ->
         if (messId.isNotBlank()) repository.observeAuditLogs(messId) else flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -119,23 +140,36 @@ class MessViewModel(
         combine(members, dailyMeals, bazaarExpenses) { mems, meals, bazaars ->
             Triple(mems, meals, bazaars)
         },
-        combine(deposits, utilityBills, currentMess) { deps, utils, mess ->
-            Triple(deps, utils, mess)
-        }
-    ) { (mems, meals, bazaars), (deps, utils, mess) ->
+        combine(deposits, utilityBills, sharedBills) { deps, utils, shared ->
+            Triple(deps, utils, shared)
+        },
+        currentMess
+    ) { (mems, meals, bazaars), (deps, utils, shared), mess ->
         MessCalculationEngine.calculateSummary(
             members = mems,
             dailyMeals = meals,
             bazaarExpenses = bazaars,
             deposits = deps,
             utilityBills = utils,
+            sharedBills = shared,
             lunchDeadline = mess?.lunchBookingDeadline ?: "09:00",
             nightDeadline = mess?.nightBookingDeadline ?: "17:00"
         )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
-        MessSummary(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyList())
+        MessSummary(
+            totalUnits = 0.0,
+            totalBazaarCost = 0.0,
+            mealRate = 0.0,
+            totalDeposits = 0.0,
+            totalUtilities = 0.0,
+            totalSharedBills = 0.0,
+            totalSharedBillsCollected = 0.0,
+            totalSharedBillsUnpaid = 0.0,
+            remainingFund = 0.0,
+            memberSettlements = emptyList()
+        )
     )
 
     // Kitchen Order Summary for the selected date - Separate Member & Guest Portions
@@ -779,6 +813,145 @@ class MessViewModel(
             } catch (e: Exception) {
                 _uiMessage.value = "Resignation failed: ${e.message}"
             }
+        }
+    }
+
+    // --- Shared Bills & Fixed Costs Actions ---
+    fun createSharedBill(
+        title: String,
+        allocationType: String,
+        amountInput: Double,
+        deadline: String,
+        notes: String,
+        customShares: Map<String, Double> = emptyMap()
+    ) {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        if (!isManager.value) {
+            _uiMessage.value = "Access Denied: Only Managers and Admins can create shared bills."
+            return
+        }
+        val activeMems = members.value.filter { it.isActive }
+        if (activeMems.isEmpty()) {
+            _uiMessage.value = "Cannot create bill: No active members found in this mess."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val currentMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+                repository.createSharedBill(
+                    messId = messId,
+                    title = title.trim(),
+                    allocationType = allocationType,
+                    amountInput = amountInput,
+                    month = currentMonth,
+                    deadline = deadline.trim(),
+                    notes = notes.trim(),
+                    activeMembers = activeMems,
+                    customShares = customShares
+                )
+                _uiMessage.value = "Shared bill '$title' published! In-app notifications sent to ${activeMems.size} members."
+            } catch (e: Exception) {
+                _uiMessage.value = "Failed to create shared bill: ${e.message}"
+            }
+        }
+    }
+
+    fun updateSharedBill(bill: SharedBill, updatedShares: Map<String, Double>? = null) {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        if (!isManager.value) {
+            _uiMessage.value = "Access Denied: Only Managers can edit shared bills."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.updateSharedBill(messId, bill, updatedShares)
+                _uiMessage.value = "Shared bill updated successfully!"
+            } catch (e: Exception) {
+                _uiMessage.value = "Failed to update bill: ${e.message}"
+            }
+        }
+    }
+
+    fun deleteSharedBill(bill: SharedBill) {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        if (!isManager.value) {
+            _uiMessage.value = "Access Denied: Only Managers can delete shared bills."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.deleteSharedBill(messId, bill.id, bill.title, bill.totalAmount)
+                _uiMessage.value = "Shared bill '${bill.title}' removed."
+            } catch (e: Exception) {
+                _uiMessage.value = "Failed to delete bill: ${e.message}"
+            }
+        }
+    }
+
+    fun recordBillPayment(
+        billId: String,
+        memberId: String,
+        memberName: String,
+        assignedShare: Double,
+        amountPaid: Double,
+        paymentMethod: String,
+        paymentDate: String,
+        notes: String
+    ) {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        if (!isManager.value) {
+            _uiMessage.value = "Access Denied: Only Managers can record payments."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.recordBillPayment(
+                    messId = messId,
+                    billId = billId,
+                    memberId = memberId,
+                    memberName = memberName,
+                    assignedShare = assignedShare,
+                    amountPaid = amountPaid,
+                    paymentMethod = paymentMethod,
+                    paymentDate = paymentDate,
+                    notes = notes
+                )
+                val statusText = when {
+                    amountPaid >= assignedShare && assignedShare > 0.0 -> "Paid in full"
+                    amountPaid > 0.0 -> "Partially paid (৳$amountPaid)"
+                    else -> "Marked as unpaid"
+                }
+                _uiMessage.value = "Payment recorded for $memberName: $statusText."
+            } catch (e: Exception) {
+                _uiMessage.value = "Failed to record payment: ${e.message}"
+            }
+        }
+    }
+
+    fun markNotificationAsRead(notificationId: String) {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                repository.markNotificationAsRead(messId, notificationId)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun markAllNotificationsAsRead() {
+        val messId = _selectedMessId.value
+        if (messId.isBlank()) return
+        val unreadIds = notifications.value.filter { !it.isRead }.map { it.id }
+        if (unreadIds.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                repository.markAllNotificationsAsRead(messId, unreadIds)
+                _uiMessage.value = "All notifications marked as read."
+            } catch (_: Exception) {}
         }
     }
 

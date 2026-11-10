@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Payments
@@ -16,12 +17,15 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +51,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DepositsScreen
 import com.example.ui.screens.MessSelectScreen
 import com.example.ui.screens.SettlementScreen
+import com.example.ui.screens.SharedBillsScreen
 import com.example.ui.screens.SignInScreen
 import com.example.ui.theme.MessMealTheme
 import com.google.firebase.Firebase
@@ -71,6 +76,7 @@ enum class Screen {
     DASHBOARD,
     DAILY_MEALS,
     BAZAAR_LOG,
+    SHARED_BILLS,
     DEPOSITS,
     SETTLEMENT,
     MESS_SELECT
@@ -199,31 +205,37 @@ fun MainFeatureScreen(
                         selected = currentScreen == Screen.DASHBOARD,
                         onClick = { currentScreen = Screen.DASHBOARD },
                         icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                        label = { Text("Home") }
+                        label = { Text("Home", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
                     )
                     NavigationBarItem(
                         selected = currentScreen == Screen.DAILY_MEALS,
                         onClick = { currentScreen = Screen.DAILY_MEALS },
                         icon = { Icon(Icons.Default.Restaurant, contentDescription = "Daily Meals") },
-                        label = { Text("Meals") }
+                        label = { Text("Meals", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
                     )
                     NavigationBarItem(
                         selected = currentScreen == Screen.BAZAAR_LOG,
                         onClick = { currentScreen = Screen.BAZAAR_LOG },
                         icon = { Icon(Icons.Default.ShoppingBag, contentDescription = "Bazaar Log") },
-                        label = { Text("Bazaar") }
+                        label = { Text("Bazaar", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
+                    )
+                    NavigationBarItem(
+                        selected = currentScreen == Screen.SHARED_BILLS,
+                        onClick = { currentScreen = Screen.SHARED_BILLS },
+                        icon = { Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Bills") },
+                        label = { Text("Bills", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
                     )
                     NavigationBarItem(
                         selected = currentScreen == Screen.DEPOSITS,
                         onClick = { currentScreen = Screen.DEPOSITS },
-                        icon = { Icon(Icons.Default.Payments, contentDescription = "Deposits") },
-                        label = { Text("Deposits") }
+                        icon = { Icon(Icons.Default.Payments, contentDescription = "Deposit") },
+                        label = { Text("Deposit", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
                     )
                     NavigationBarItem(
                         selected = currentScreen == Screen.SETTLEMENT,
                         onClick = { currentScreen = Screen.SETTLEMENT },
-                        icon = { Icon(Icons.Default.Assessment, contentDescription = "Settlement") },
-                        label = { Text("Balance") }
+                        icon = { Icon(Icons.Default.Assessment, contentDescription = "Balance") },
+                        label = { Text("Balance", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)) }
                     )
                 }
             }
@@ -240,6 +252,7 @@ fun MainFeatureScreen(
                         viewModel = viewModel,
                         onNavigateToMeals = { currentScreen = Screen.DAILY_MEALS },
                         onNavigateToBazaar = { currentScreen = Screen.BAZAAR_LOG },
+                        onNavigateToSharedBills = { currentScreen = Screen.SHARED_BILLS },
                         onNavigateToDeposits = { currentScreen = Screen.DEPOSITS },
                         onNavigateToSettlement = { currentScreen = Screen.SETTLEMENT },
                         onChangeMess = { currentScreen = Screen.MESS_SELECT },
@@ -258,6 +271,12 @@ fun MainFeatureScreen(
                         onBack = { currentScreen = Screen.DASHBOARD }
                     )
                 }
+                Screen.SHARED_BILLS -> {
+                    SharedBillsScreen(
+                        viewModel = viewModel,
+                        onBack = { currentScreen = Screen.DASHBOARD }
+                    )
+                }
                 Screen.DEPOSITS -> {
                     DepositsScreen(
                         viewModel = viewModel,
@@ -267,6 +286,7 @@ fun MainFeatureScreen(
                 Screen.SETTLEMENT -> {
                     SettlementScreen(
                         viewModel = viewModel,
+                        onNavigateToSharedBills = { currentScreen = Screen.SHARED_BILLS },
                         onBack = { currentScreen = Screen.DASHBOARD }
                     )
                 }

@@ -127,6 +127,20 @@ service cloud.firestore {
         allow delete: if isMessManager(messId);
       }
 
+      // Shared Bills & Fixed Costs - Members can view; Managers can create, update, and record payments
+      match /shared_bills/{billId} {
+        allow read: if isMessMember(messId);
+        allow create, update, delete: if isMessManager(messId);
+      }
+
+      // In-App Notifications for published bills & mess alerts
+      match /notifications/{notificationId} {
+        allow read: if isMessMember(messId);
+        allow create: if isMessManager(messId) || isMessMember(messId);
+        allow update: if isMessMember(messId);
+        allow delete: if isMessManager(messId) || (isMessMember(messId) && resource.data.targetMemberId == request.auth.uid);
+      }
+
       // Audit logs - Immutable audit trail of financial changes and overrides
       match /audit_logs/{logId} {
         allow read: if isMessMember(messId);

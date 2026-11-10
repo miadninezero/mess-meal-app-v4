@@ -11,6 +11,8 @@ import com.example.data.model.UtilityBill
 import com.example.util.DhakaTimeHelper
 import kotlin.math.roundToInt
 
+import com.example.data.model.SharedBill
+
 data class MemberSettlement(
     val memberId: String,
     val memberName: String,
@@ -19,12 +21,15 @@ data class MemberSettlement(
     val guestUnits: Double = 0.0,
     val mealCost: Double,
     val utilityCost: Double,
+    val sharedBillsUnpaid: Double = 0.0,
+    val sharedBillsPaid: Double = 0.0,
     val totalCost: Double,
     val totalDeposit: Double,
     val netBalance: Double
 ) {
     val totalMeals: Double get() = totalUnits
     val isRefund: Boolean get() = netBalance >= 0.0
+    val sharedBillsTotalShare: Double get() = sharedBillsUnpaid + sharedBillsPaid
 }
 
 data class MessSummary(
@@ -33,6 +38,9 @@ data class MessSummary(
     val mealRate: Double,
     val totalDeposits: Double,
     val totalUtilities: Double,
+    val totalSharedBills: Double = 0.0,
+    val totalSharedBillsCollected: Double = 0.0,
+    val totalSharedBillsUnpaid: Double = 0.0,
     val remainingFund: Double,
     val memberSettlements: List<MemberSettlement>
 ) {
@@ -214,13 +222,14 @@ object MessCalculationEngine {
         bazaarExpenses: List<BazaarExpense>,
         deposits: List<Deposit>,
         utilityBills: List<UtilityBill>,
+        sharedBills: List<SharedBill> = emptyList(),
         lunchDeadline: String = "09:00",
         nightDeadline: String = "17:00"
     ): MessSummary {
         val activeMembers = members.filter { it.isActive }
         val memberCount = if (activeMembers.isNotEmpty()) activeMembers.size else 1
 
-        // 1. Calculate Total Bazaar Cost
+        // 1. Calculate Total Bazaar Cost (strictly grocery expenses - isolated from shared bills)
         val totalBazaarCost = bazaarExpenses.sumOf { it.amount }
 
         // 2. Calculate Total Units per member and total mess units across the month
@@ -277,7 +286,7 @@ object MessCalculationEngine {
             }
         }
 
-        // 3. Compute Meal Rate: Total Bazaar Cost / Total Mess Units
+        // 3. Compute Meal Rate: Total Bazaar Cost / Total Mess Units (Shared bills DO NOT affect meal rate)
         val mealRate = if (totalMessUnits > 0.0) {
             totalBazaarCost / totalMessUnits
         } else {
@@ -288,7 +297,12 @@ object MessCalculationEngine {
         val totalUtilities = utilityBills.sumOf { it.amount }
         val perHeadUtility = if (memberCount > 0) totalUtilities / memberCount else 0.0
 
-        // 5. Total deposits per member
+        // 5. Shared Bills totals
+        val totalSharedBills = sharedBills.sumOf { it.totalAmount }
+        val totalSharedBillsCollected = sharedBills.sumOf { it.totalCollected }
+        val totalSharedBillsUnpaid = sharedBills.sumOf { it.outstandingBalance }
+
+        // 6. Total deposits per member
         val memberDepositsMap = mutableMapOf<String, Double>()
         var totalDeposits = 0.0
         for (deposit in deposits) {
@@ -296,14 +310,20 @@ object MessCalculationEngine {
             totalDeposits += deposit.amount
         }
 
-        // 6. Build individual member settlements based on confirmed booking units
+        // 7. Build individual member settlements:
+        // Include unpaid shared bills in member's settlement without double-counting already paid shares!
         val settlements = members.map { member ->
             val totalUnits = memberUnitsMap[member.id] ?: 0.0
             val mUnits = memberOnlyUnitsMap[member.id] ?: totalUnits
             val gUnits = guestOnlyUnitsMap[member.id] ?: 0.0
             val mealCost = totalUnits * mealRate
             val utilityShare = if (member.isActive) perHeadUtility else 0.0
-            val totalCost = mealCost + utilityShare
+
+            val memberSharedBillsShare = sharedBills.sumOf { bill -> bill.getMemberShare(member.id) }
+            val memberSharedBillsPaid = sharedBills.sumOf { bill -> bill.getMemberPaid(member.id) }
+            val memberSharedBillsUnpaid = maxOf(0.0, memberSharedBillsShare - memberSharedBillsPaid)
+
+            val totalCost = mealCost + utilityShare + memberSharedBillsUnpaid
             val deposit = memberDepositsMap[member.id] ?: 0.0
             val netBalance = deposit - totalCost
 
@@ -315,6 +335,8 @@ object MessCalculationEngine {
                 guestUnits = roundTwoDecimals(gUnits),
                 mealCost = roundTwoDecimals(mealCost),
                 utilityCost = roundTwoDecimals(utilityShare),
+                sharedBillsUnpaid = roundTwoDecimals(memberSharedBillsUnpaid),
+                sharedBillsPaid = roundTwoDecimals(memberSharedBillsPaid),
                 totalCost = roundTwoDecimals(totalCost),
                 totalDeposit = roundTwoDecimals(deposit),
                 netBalance = roundTwoDecimals(netBalance)
@@ -329,6 +351,9 @@ object MessCalculationEngine {
             mealRate = roundTwoDecimals(mealRate),
             totalDeposits = roundTwoDecimals(totalDeposits),
             totalUtilities = roundTwoDecimals(totalUtilities),
+            totalSharedBills = roundTwoDecimals(totalSharedBills),
+            totalSharedBillsCollected = roundTwoDecimals(totalSharedBillsCollected),
+            totalSharedBillsUnpaid = roundTwoDecimals(totalSharedBillsUnpaid),
             remainingFund = roundTwoDecimals(remainingFund),
             memberSettlements = settlements
         )

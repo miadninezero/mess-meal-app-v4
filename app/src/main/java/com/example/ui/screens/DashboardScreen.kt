@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
@@ -29,8 +32,8 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -39,8 +42,10 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -82,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.BazaarExpense
 import com.example.ui.MessViewModel
 import com.example.util.DhakaTimeHelper
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +95,7 @@ fun DashboardScreen(
     viewModel: MessViewModel,
     onNavigateToMeals: () -> Unit,
     onNavigateToBazaar: () -> Unit,
+    onNavigateToSharedBills: () -> Unit,
     onNavigateToDeposits: () -> Unit,
     onNavigateToSettlement: () -> Unit,
     onChangeMess: () -> Unit,
@@ -100,6 +107,9 @@ fun DashboardScreen(
     val summary by viewModel.summary.collectAsState()
     val dailyMeals by viewModel.dailyMeals.collectAsState()
     val bazaarExpenses by viewModel.bazaarExpenses.collectAsState()
+    val sharedBills by viewModel.sharedBills.collectAsState()
+    val notifications by viewModel.notifications.collectAsState()
+    val unreadNotifsCount by viewModel.unreadNotificationsCount.collectAsState()
 
     val currentMember = members.firstOrNull { it.userId == viewModel.currentUserId }
     val memberId = currentMember?.id ?: viewModel.currentUserId
@@ -111,6 +121,7 @@ fun DashboardScreen(
 
     var showMenu by remember { mutableStateOf(false) }
     var showRolesDialog by remember { mutableStateOf(false) }
+    var showNotificationsDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -168,38 +179,57 @@ fun DashboardScreen(
                     }
                 }
 
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showNotificationsDialog = true }) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadNotifsCount > 0) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    ) {
+                                        Text("$unreadNotifsCount")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                        }
                     }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Mess Members & Roles") },
-                            leadingIcon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                showRolesDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Switch / Join Mess") },
-                            leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onChangeMess()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Sign Out") },
-                            leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onSignOut()
-                            }
-                        )
+
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Mess Members & Roles") },
+                                leadingIcon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    showRolesDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Switch / Join Mess") },
+                                leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onChangeMess()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Sign Out") },
+                                leadingIcon = { Icon(Icons.Default.PowerSettingsNew, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onSignOut()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -232,7 +262,7 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                         Icon(
-                            imageVector = Icons.Default.TrendingUp,
+                            imageVector = Icons.AutoMirrored.Filled.TrendingUp,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -459,75 +489,210 @@ fun DashboardScreen(
 
         // Quick Navigation Section
         item {
-            Text(
-                text = "Mess Operations",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Mess Operations",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                TextButton(onClick = onNavigateToSharedBills) {
+                    Text("View All Bills", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+
+        // Shared Bills & Fixed Costs Dedicated Feature Card
+        item {
+            val totalBills = sharedBills.size
+            val totalBillAmount = sharedBills.sumOf { it.totalAmount }
+            val totalCollected = sharedBills.sumOf { it.totalCollected }
+            val outstandingDue = (totalBillAmount - totalCollected).coerceAtLeast(0.0)
+
+            OutlinedCard(
+                onClick = onNavigateToSharedBills,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Shared Bills",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Chef, gas, wifi & utilities",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (outstandingDue <= 0.0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Text(
+                                text = if (outstandingDue <= 0.0) "ALL PAID" else "DUE: ৳${outstandingDue.toInt()}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (outstandingDue <= 0.0) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "$totalBills Bills Published",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Collected: ৳${totalCollected.toInt()} / ৳${totalBillAmount.toInt()}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
         }
 
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 OutlinedCard(
                     onClick = onNavigateToMeals,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Restaurant, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Daily Meals", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                        Icon(Icons.Default.Restaurant, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Meals",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
 
                 OutlinedCard(
                     onClick = onNavigateToBazaar,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.ShoppingBag, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Bazaar Log", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                        Icon(Icons.Default.ShoppingBag, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Bazaar",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        )
+                    }
+                }
+
+                OutlinedCard(
+                    onClick = onNavigateToSharedBills,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Bills",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
 
                 OutlinedCard(
                     onClick = onNavigateToDeposits,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Deposits", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                        Icon(Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Deposit",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
 
                 OutlinedCard(
                     onClick = onNavigateToSettlement,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Assessment, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Balance", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                        Icon(Icons.Default.Assessment, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Balance",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
             }
@@ -642,6 +807,15 @@ fun DashboardScreen(
             onDemoteToMember = { member -> viewModel.demoteManagerToMember(member) },
             onResignAsManager = { successor -> viewModel.resignAsManager(successor) },
             onDismiss = { showRolesDialog = false }
+        )
+    }
+
+    if (showNotificationsDialog) {
+        NotificationsDialog(
+            notifications = notifications,
+            onDismiss = { showNotificationsDialog = false },
+            onMarkAsRead = { id -> viewModel.markNotificationAsRead(id) },
+            onMarkAllAsRead = { viewModel.markAllNotificationsAsRead() }
         )
     }
 }
@@ -909,7 +1083,7 @@ private fun ManageRolesDialog(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Resign from Manager Role")
                     }
@@ -986,7 +1160,7 @@ private fun ManageRolesDialog(
             // There are other managers
             AlertDialog(
                 onDismissRequest = { showResignFlow = false },
-                icon = { Icon(Icons.Default.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                icon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 title = { Text("Resign as Manager?", fontWeight = FontWeight.Bold) },
                 text = {
                     Text("Are you sure you want to step down from Manager role? Other mess managers will continue managing the mess, and you will become a regular member.")
@@ -1014,7 +1188,7 @@ private fun ManageRolesDialog(
             val successorCandidate = otherMembers.firstOrNull { it.id == selectedSuccessorId || it.userId == selectedSuccessorId }
             AlertDialog(
                 onDismissRequest = { showResignFlow = false },
-                icon = { Icon(Icons.Default.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                icon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 title = { Text("Transfer & Resign", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

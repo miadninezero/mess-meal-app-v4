@@ -7,6 +7,10 @@ import com.example.data.model.Deposit
 import com.example.data.model.MealAttendanceEntry
 import com.example.data.model.Member
 import com.example.data.model.UtilityBill
+import com.example.data.model.BillAllocationType
+import com.example.data.model.BillPaymentRecord
+import com.example.data.model.BillPaymentStatus
+import com.example.data.model.SharedBill
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -547,4 +551,277 @@ class MessCalculationEngineTest {
         assertEquals("Combined historical attendance + confirmed booking units = 3.5", 3.5, summary.totalUnits, 0.001)
         assertEquals("Meal rate = 400 / 3.5 = 114.29", 114.29, summary.mealRate, 0.01)
     }
+
+    @Test
+    fun testSharedBillsFixedPerMemberAndDividedEquallyAllocations() {
+        // Test 1: Fixed per member (Chef Bill ৳500 each for 3 members -> ৳1,500 total)
+        val fixedBill = SharedBill(
+            id = "sb1",
+            title = "Chef Bill",
+            allocationType = BillAllocationType.FIXED_PER_MEMBER,
+            totalAmount = 1500.0,
+            perMemberAmount = 500.0,
+            assignedMemberIds = listOf("m1", "m2", "m3"),
+            memberShares = mapOf("m1" to 500.0, "m2" to 500.0, "m3" to 500.0)
+        )
+
+        assertEquals("Fixed per member share for m1 must be 500.0", 500.0, fixedBill.getMemberShare("m1"), 0.001)
+        assertEquals("Fixed per member share for m2 must be 500.0", 500.0, fixedBill.getMemberShare("m2"), 0.001)
+        assertEquals("Total amount must be 1500.0", 1500.0, fixedBill.totalAmount, 0.001)
+
+        // Test 2: Divided equally (Gas Bill ৳2,400 divided among 10 members -> ৳240 each)
+        val memberIds10 = (1..10).map { "user_$it" }
+        val dividedBill = SharedBill(
+            id = "sb2",
+            title = "Gas Bill",
+            allocationType = BillAllocationType.DIVIDED_EQUALLY,
+            totalAmount = 2400.0,
+            perMemberAmount = 240.0,
+            assignedMemberIds = memberIds10,
+            memberShares = memberIds10.associateWith { 240.0 }
+        )
+
+        assertEquals("Divided equally total amount = 2400.0", 2400.0, dividedBill.totalAmount, 0.001)
+        assertEquals("Each of the 10 members gets 240.0", 240.0, dividedBill.getMemberShare("user_5"), 0.001)
+    }
+
+    @Test
+    fun testSharedBillsPaymentStatusesAndOutstandingCalculation() {
+        val memberIds = listOf("m1", "m2", "m3")
+        val bill = SharedBill(
+            id = "sb1",
+            title = "Chef Bill",
+            allocationType = BillAllocationType.FIXED_PER_MEMBER,
+            totalAmount = 1500.0,
+            perMemberAmount = 500.0,
+            assignedMemberIds = memberIds,
+            memberShares = mapOf("m1" to 500.0, "m2" to 500.0, "m3" to 500.0),
+            payments = mapOf(
+                "m1" to BillPaymentRecord(memberId = "m1", amountPaid = 500.0, status = BillPaymentStatus.PAID),
+                "m2" to BillPaymentRecord(memberId = "m2", amountPaid = 200.0, status = BillPaymentStatus.PARTIALLY_PAID),
+                "m3" to BillPaymentRecord(memberId = "m3", amountPaid = 0.0, status = BillPaymentStatus.UNPAID)
+            )
+        )
+
+        assertEquals("Total collected = 500 + 200 + 0 = 700.0", 700.0, bill.totalCollected, 0.001)
+        assertEquals("Outstanding balance = 1500 - 700 = 800.0", 800.0, bill.outstandingBalance, 0.001)
+        assertEquals("Paid members count = 1", 1, bill.paidMembersCount)
+        assertEquals("Partially paid members count = 1", 1, bill.partiallyPaidMembersCount)
+        assertEquals("Unpaid members count = 1", 1, bill.unpaidMembersCount)
+
+        assertEquals("m1 payment status must be PAID", BillPaymentStatus.PAID, bill.getMemberPaymentStatus("m1"))
+        assertEquals("m2 payment status must be PARTIALLY_PAID", BillPaymentStatus.PARTIALLY_PAID, bill.getMemberPaymentStatus("m2"))
+        assertEquals("m3 payment status must be UNPAID", BillPaymentStatus.UNPAID, bill.getMemberPaymentStatus("m3"))
+
+        assertEquals("m1 due = 0.0", 0.0, bill.getMemberDue("m1"), 0.001)
+        assertEquals("m2 due = 300.0", 300.0, bill.getMemberDue("m2"), 0.001)
+        assertEquals("m3 due = 500.0", 500.0, bill.getMemberDue("m3"), 0.001)
+    }
+
+    @Test
+    fun testUnpaidSharedBillsIncludedInSettlementWithoutDoubleCounting() {
+        val members = listOf(
+            Member(id = "m1", displayName = "Rahim", isActive = true),
+            Member(id = "m2", displayName = "Karim", isActive = true),
+            Member(id = "m3", displayName = "Jamal", isActive = true)
+        )
+        // Grocery bazaar = 600.0
+        val bazaar = listOf(BazaarExpense(id = "b1", amount = 600.0))
+        // Each books 2 meal units on a normal day -> Total 6.0 units -> Meal Rate = 600 / 6 = 100.0
+        val dailyMeals = listOf(
+            DailyMealRecord(
+                id = "2026-11-01",
+                date = "2026-11-01",
+                bookings = mapOf(
+                    "m1" to com.example.data.model.MealBookingEntry(statusLunch = "BOOKED", statusNight = "BOOKED"),
+                    "m2" to com.example.data.model.MealBookingEntry(statusLunch = "BOOKED", statusNight = "BOOKED"),
+                    "m3" to com.example.data.model.MealBookingEntry(statusLunch = "BOOKED", statusNight = "BOOKED")
+                )
+            )
+        )
+        // Deposits: Each member deposited 500.0 for meal fund
+        val deposits = listOf(
+            Deposit(id = "d1", memberId = "m1", amount = 500.0),
+            Deposit(id = "d2", memberId = "m2", amount = 500.0),
+            Deposit(id = "d3", memberId = "m3", amount = 500.0)
+        )
+
+        // Shared Bill: Chef Bill ৳500 each for 3 members
+        // - m1 paid ৳500 directly (Status: PAID)
+        // - m2 paid ৳200 directly (Status: PARTIALLY_PAID) -> ৳300 unpaid
+        // - m3 paid ৳0 directly (Status: UNPAID) -> ৳500 unpaid
+        val sharedBills = listOf(
+            SharedBill(
+                id = "sb1",
+                title = "Chef Bill",
+                allocationType = BillAllocationType.FIXED_PER_MEMBER,
+                totalAmount = 1500.0,
+                perMemberAmount = 500.0,
+                assignedMemberIds = listOf("m1", "m2", "m3"),
+                memberShares = mapOf("m1" to 500.0, "m2" to 500.0, "m3" to 500.0),
+                payments = mapOf(
+                    "m1" to BillPaymentRecord(memberId = "m1", amountPaid = 500.0, status = BillPaymentStatus.PAID),
+                    "m2" to BillPaymentRecord(memberId = "m2", amountPaid = 200.0, status = BillPaymentStatus.PARTIALLY_PAID),
+                    "m3" to BillPaymentRecord(memberId = "m3", amountPaid = 0.0, status = BillPaymentStatus.UNPAID)
+                )
+            )
+        )
+
+        val summary = MessCalculationEngine.calculateSummary(
+            members = members,
+            dailyMeals = dailyMeals,
+            bazaarExpenses = bazaar,
+            deposits = deposits,
+            utilityBills = emptyList(),
+            sharedBills = sharedBills
+        )
+
+        // 1. Shared bills MUST NOT affect bazaar or meal rate
+        assertEquals("Bazaar is strictly 600.0", 600.0, summary.totalBazaarCost, 0.001)
+        assertEquals("Meal rate = 600 / 6 = 100.0", 100.0, summary.mealRate, 0.001)
+
+        // 2. Member 1 (Rahim):
+        // Meal cost = 2 * 100 = 200.0
+        // Shared bill: 500 share, 500 paid directly -> Unpaid = 0.0 (NO DOUBLE COUNTING!)
+        // Total cost = 200 (meal) + 0 (unpaid) = 200.0
+        // Net balance = 500 deposit - 200 = +300.0 (Refund due)
+        val rahim = summary.memberSettlements.first { it.memberId == "m1" }
+        assertEquals("Rahim meal cost = 200.0", 200.0, rahim.mealCost, 0.001)
+        assertEquals("Rahim unpaid shared bills = 0.0", 0.0, rahim.sharedBillsUnpaid, 0.001)
+        assertEquals("Rahim paid shared bills = 500.0", 500.0, rahim.sharedBillsPaid, 0.001)
+        assertEquals("Rahim total cost = 200.0", 200.0, rahim.totalCost, 0.001)
+        assertEquals("Rahim refund = 500 - 200 = +300.0", 300.0, rahim.netBalance, 0.001)
+        assertTrue(rahim.isRefund)
+
+        // 3. Member 2 (Karim):
+        // Meal cost = 2 * 100 = 200.0
+        // Shared bill: 500 share, 200 paid directly -> Unpaid = 300.0
+        // Total cost = 200 (meal) + 300 (unpaid) = 500.0
+        // Net balance = 500 deposit - 500 = 0.0
+        val karim = summary.memberSettlements.first { it.memberId == "m2" }
+        assertEquals("Karim meal cost = 200.0", 200.0, karim.mealCost, 0.001)
+        assertEquals("Karim unpaid shared bills = 300.0", 300.0, karim.sharedBillsUnpaid, 0.001)
+        assertEquals("Karim paid shared bills = 200.0", 200.0, karim.sharedBillsPaid, 0.001)
+        assertEquals("Karim total cost = 200 + 300 = 500.0", 500.0, karim.totalCost, 0.001)
+        assertEquals("Karim net balance = 500 - 500 = 0.0", 0.0, karim.netBalance, 0.001)
+
+        // 4. Member 3 (Jamal):
+        // Meal cost = 2 * 100 = 200.0
+        // Shared bill: 500 share, 0 paid directly -> Unpaid = 500.0
+        // Total cost = 200 (meal) + 500 (unpaid) = 700.0
+        // Net balance = 500 deposit - 700 = -200.0 (Due)
+        val jamal = summary.memberSettlements.first { it.memberId == "m3" }
+        assertEquals("Jamal meal cost = 200.0", 200.0, jamal.mealCost, 0.001)
+        assertEquals("Jamal unpaid shared bills = 500.0", 500.0, jamal.sharedBillsUnpaid, 0.001)
+        assertEquals("Jamal paid shared bills = 0.0", 0.0, jamal.sharedBillsPaid, 0.001)
+        assertEquals("Jamal total cost = 200 + 500 = 700.0", 700.0, jamal.totalCost, 0.001)
+        assertEquals("Jamal net balance = 500 - 700 = -200.0", -200.0, jamal.netBalance, 0.001)
+        assertFalse(jamal.isRefund)
+    }
+
+    @Test
+    fun testPreserveHistoricalBillAmountsWhenAdminChangesFutureBillingSettings() {
+        // Historical Bill from last month (frozen with 3 members at ৳400 each)
+        val historicalBill = SharedBill(
+            id = "sb_oct",
+            title = "Oct Chef Salary",
+            month = "2026-10",
+            totalAmount = 1200.0,
+            perMemberAmount = 400.0,
+            assignedMemberIds = listOf("m1", "m2", "m3"),
+            memberShares = mapOf("m1" to 400.0, "m2" to 400.0, "m3" to 400.0),
+            payments = mapOf(
+                "m1" to BillPaymentRecord(memberId = "m1", amountPaid = 400.0, status = BillPaymentStatus.PAID)
+            )
+        )
+
+        // Admin subsequently changes future billing setting:
+        // New chef fee is ৳600 each for 4 members (a 4th member joined)
+        val newMembers = listOf(
+            Member(id = "m1", displayName = "Rahim"),
+            Member(id = "m2", displayName = "Karim"),
+            Member(id = "m3", displayName = "Jamal"),
+            Member(id = "m4", displayName = "New Member")
+        )
+        val newNovemberBill = SharedBill(
+            id = "sb_nov",
+            title = "Nov Chef Salary",
+            month = "2026-11",
+            totalAmount = 2400.0,
+            perMemberAmount = 600.0,
+            assignedMemberIds = newMembers.map { it.id },
+            memberShares = newMembers.associate { it.id to 600.0 }
+        )
+
+        // Historical bill's own attributes and records are completely intact:
+        assertEquals("Historical bill totalAmount must stay 1200.0", 1200.0, historicalBill.totalAmount, 0.001)
+        assertEquals("Historical bill perMemberAmount must stay 400.0", 400.0, historicalBill.perMemberAmount, 0.001)
+        assertEquals("Historical member share for m1 must stay 400.0", 400.0, historicalBill.getMemberShare("m1"), 0.001)
+        assertEquals("Historical payment for m1 must stay 400.0", 400.0, historicalBill.getMemberPaid("m1"), 0.001)
+        assertEquals("New 4th member is not in historical bill", 0.0, historicalBill.getMemberShare("m4"), 0.001)
+
+        // New bill reflects new setting:
+        assertEquals("New bill totalAmount is 2400.0", 2400.0, newNovemberBill.totalAmount, 0.001)
+        assertEquals("New bill perMemberAmount is 600.0", 600.0, newNovemberBill.perMemberAmount, 0.001)
+        assertEquals("New member gets 600.0 in new bill", 600.0, newNovemberBill.getMemberShare("m4"), 0.001)
+    }
+
+    @Test
+    fun testManagerCanCustomizeBillsDifferentlyForEachMember() {
+        val members = listOf(
+            Member(id = "m1", displayName = "Rahim"),
+            Member(id = "m2", displayName = "Karim"),
+            Member(id = "m3", displayName = "Jamal")
+        )
+
+        // Manager sets different amounts: Rahim pays ৳800 (AC room), Karim pays ৳500, Jamal pays ৳400
+        val customShares = mapOf(
+            "m1" to 800.0,
+            "m2" to 500.0,
+            "m3" to 400.0
+        )
+        val total = customShares.values.sum()
+        val avg = total / members.size
+
+        val customBill = SharedBill(
+            id = "sb_custom",
+            title = "Room Electricity & Maintenance",
+            allocationType = BillAllocationType.CUSTOM_PER_MEMBER,
+            totalAmount = total,
+            perMemberAmount = avg,
+            assignedMemberIds = listOf("m1", "m2", "m3"),
+            memberShares = customShares,
+            payments = mapOf(
+                "m1" to BillPaymentRecord(memberId = "m1", amountPaid = 800.0, status = BillPaymentStatus.PAID),
+                "m2" to BillPaymentRecord(memberId = "m2", amountPaid = 250.0, status = BillPaymentStatus.PARTIALLY_PAID)
+            )
+        )
+
+        assertEquals("Total amount should equal sum of custom shares", 1700.0, customBill.totalAmount, 0.001)
+        assertEquals("Rahim share is 800.0", 800.0, customBill.getMemberShare("m1"), 0.001)
+        assertEquals("Karim share is 500.0", 500.0, customBill.getMemberShare("m2"), 0.001)
+        assertEquals("Jamal share is 400.0", 400.0, customBill.getMemberShare("m3"), 0.001)
+
+        assertEquals("Rahim paid in full", BillPaymentStatus.PAID, customBill.getMemberPaymentStatus("m1"))
+        assertEquals("Karim partially paid", BillPaymentStatus.PARTIALLY_PAID, customBill.getMemberPaymentStatus("m2"))
+        assertEquals("Jamal unpaid", BillPaymentStatus.UNPAID, customBill.getMemberPaymentStatus("m3"))
+
+        assertEquals("Rahim due is 0", 0.0, customBill.getMemberDue("m1"), 0.001)
+        assertEquals("Karim due is 250", 250.0, customBill.getMemberDue("m2"), 0.001)
+        assertEquals("Jamal due is 400", 400.0, customBill.getMemberDue("m3"), 0.001)
+
+        val summary = MessCalculationEngine.calculateSummary(
+            members = members,
+            dailyMeals = emptyList(),
+            bazaarExpenses = emptyList(),
+            deposits = emptyList(),
+            utilityBills = emptyList(),
+            sharedBills = listOf(customBill)
+        )
+
+        val karimSettlement = summary.memberSettlements.first { it.memberId == "m2" }
+        assertEquals("Karim unpaid custom bill is 250.0", 250.0, karimSettlement.sharedBillsUnpaid, 0.001)
+        assertEquals("Karim net balance includes 250.0 debit without double counting", -250.0, karimSettlement.netBalance, 0.001)
+    }
 }
+

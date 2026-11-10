@@ -98,6 +98,42 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "amount", "month", "createdAt"]
+    },
+    "SharedBill": {
+      "title": "SharedBill",
+      "description": "Shared bill with fixed per member or divided equally allocation and payment tracking.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "allocationType": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "perMemberAmount": { "type": "number" },
+        "month": { "type": "string" },
+        "deadline": { "type": "string" },
+        "notes": { "type": "string" },
+        "assignedMemberIds": { "type": "array", "items": { "type": "string" } },
+        "memberShares": { "type": "object" },
+        "payments": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "allocationType", "totalAmount", "month", "deadline", "createdAt"]
+    },
+    "InAppNotification": {
+      "title": "InAppNotification",
+      "description": "In-app notification sent to members when bills are published.",
+      "type": "object",
+      "properties": {
+        "messId": { "type": "string" },
+        "targetMemberId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "billId": { "type": "string" },
+        "amount": { "type": "number" },
+        "deadline": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messId", "targetMemberId", "title", "message", "isRead", "createdAt"]
     }
   },
   "firestore": {
@@ -128,6 +164,14 @@
     "/messes/{messId}/utility_bills/{billId}": {
       "schema": "UtilityBill",
       "description": "Fixed monthly utility bills shared equally."
+    },
+    "/messes/{messId}/shared_bills/{billId}": {
+      "schema": "SharedBill",
+      "description": "Shared bills and fixed costs with per member shares and payment tracking."
+    },
+    "/messes/{messId}/notifications/{notificationId}": {
+      "schema": "InAppNotification",
+      "description": "In-app notifications sent to mess members."
     }
   }
 }

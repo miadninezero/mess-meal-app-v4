@@ -15,6 +15,11 @@ import com.example.data.model.Member
 import com.example.data.model.Mess
 import com.example.data.model.UserProfile
 import com.example.data.model.UtilityBill
+import com.example.data.model.BillAllocationType
+import com.example.data.model.BillPaymentRecord
+import com.example.data.model.BillPaymentStatus
+import com.example.data.model.InAppNotification
+import com.example.data.model.SharedBill
 import com.example.util.DhakaTimeHelper
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -991,6 +996,350 @@ class MessRepository(private val db: FirebaseFirestore) {
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, docRef.path)
             throw e
+        }
+    }
+
+    // --- Shared Bills & Fixed Costs ---
+    fun observeSharedBills(messId: String): Flow<List<SharedBill>> = flow {
+        if (messId.isBlank()) {
+            emit(emptyList())
+            return@flow
+        }
+        val path = "messes/$messId/shared_bills"
+        emitAll(
+            db.collection("messes").document(messId).collection("shared_bills")
+                .snapshots()
+                .map { snapshot -> snapshot.toObjects(SharedBill::class.java) }
+                .catch { error ->
+                    handleFirestoreError(error, OperationType.LIST, path)
+                    emit(emptyList())
+                }
+        )
+    }
+
+    suspend fun createSharedBill(
+        messId: String,
+        title: String,
+        allocationType: String,
+        amountInput: Double,
+        month: String,
+        deadline: String,
+        notes: String,
+        activeMembers: List<Member>,
+        customShares: Map<String, Double> = emptyMap()
+    ): String {
+        val uid = requireUserId()
+        if (activeMembers.isEmpty()) {
+            throw IllegalArgumentException("Cannot create a shared bill with 0 active members.")
+        }
+        val memberCount = activeMembers.size
+        val isCustom = allocationType == BillAllocationType.CUSTOM_PER_MEMBER && customShares.isNotEmpty()
+
+        val (totalAmount, perMemberAmount) = when {
+            isCustom -> {
+                val total = MessCalculationEngine.roundTwoDecimals(customShares.values.sum())
+                val avg = if (memberCount > 0) MessCalculationEngine.roundTwoDecimals(total / memberCount) else 0.0
+                Pair(total, avg)
+            }
+            allocationType == BillAllocationType.FIXED_PER_MEMBER -> {
+                val total = MessCalculationEngine.roundTwoDecimals(amountInput * memberCount)
+                val perMem = MessCalculationEngine.roundTwoDecimals(amountInput)
+                Pair(total, perMem)
+            }
+            else -> {
+                val total = MessCalculationEngine.roundTwoDecimals(amountInput)
+                val perMem = MessCalculationEngine.roundTwoDecimals(total / memberCount)
+                Pair(total, perMem)
+            }
+        }
+
+        val assignedIds = activeMembers.map { it.id }
+        val memberShares = mutableMapOf<String, Double>()
+        val memberNames = mutableMapOf<String, String>()
+        val initialPayments = mutableMapOf<String, Map<String, Any?>>()
+
+        activeMembers.forEach { m ->
+            val share = if (isCustom) {
+                customShares[m.id] ?: 0.0
+            } else {
+                perMemberAmount
+            }
+            memberShares[m.id] = share
+            memberNames[m.id] = m.displayName.ifBlank { "Member" }
+            initialPayments[m.id] = mapOf(
+                "memberId" to m.id,
+                "memberName" to m.displayName.ifBlank { "Member" },
+                "amountPaid" to 0.0,
+                "status" to BillPaymentStatus.UNPAID,
+                "paymentDate" to "",
+                "paymentMethod" to "Cash",
+                "notes" to ""
+            )
+        }
+
+        val billDocRef = db.collection("messes").document(messId).collection("shared_bills").document()
+        val billId = billDocRef.id
+        val creatorName = auth.currentUser?.displayName ?: "Manager"
+
+        val billPayload = mapOf(
+            "title" to title,
+            "allocationType" to allocationType,
+            "totalAmount" to totalAmount,
+            "perMemberAmount" to perMemberAmount,
+            "month" to month,
+            "deadline" to deadline,
+            "notes" to notes,
+            "assignedMemberIds" to assignedIds,
+            "memberShares" to memberShares,
+            "memberNames" to memberNames,
+            "payments" to initialPayments,
+            "createdByUid" to uid,
+            "createdByName" to creatorName,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        try {
+            val batch = db.batch()
+            batch.set(billDocRef, billPayload)
+
+            // Send in-app notification to all assigned members showing individual amount & deadline
+            activeMembers.forEach { member ->
+                val memShare = memberShares[member.id] ?: perMemberAmount
+                val notifDocRef = db.collection("messes").document(messId).collection("notifications").document()
+                val notifPayload = mapOf(
+                    "messId" to messId,
+                    "targetMemberId" to member.id,
+                    "targetMemberName" to member.displayName,
+                    "title" to "New Shared Bill: $title",
+                    "message" to "You have been assigned ৳$memShare for '$title'. Payment deadline: $deadline.",
+                    "billId" to billId,
+                    "amount" to memShare,
+                    "deadline" to deadline,
+                    "isRead" to false,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+                batch.set(notifDocRef, notifPayload)
+            }
+
+            batch.commit().await()
+
+            recordAuditLog(
+                messId,
+                AuditLog(
+                    action = "SHARED_BILL_PUBLISHED",
+                    performedByUid = uid,
+                    performedByName = creatorName,
+                    details = "Published '$title': ৳$totalAmount total ($allocationType) for $memberCount members. Deadline: $deadline"
+                )
+            )
+
+            return billId
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, billDocRef.path)
+            throw e
+        }
+    }
+
+    suspend fun updateSharedBill(
+        messId: String,
+        bill: SharedBill,
+        updatedShares: Map<String, Double>? = null
+    ) {
+        val uid = requireUserId()
+        val docRef = db.collection("messes").document(messId).collection("shared_bills").document(bill.id)
+
+        val finalShares = updatedShares ?: bill.memberShares
+        val finalTotal = if (updatedShares != null) {
+            MessCalculationEngine.roundTwoDecimals(finalShares.values.sum())
+        } else {
+            bill.totalAmount
+        }
+        val finalPerMem = if (bill.assignedMemberIds.isNotEmpty()) {
+            MessCalculationEngine.roundTwoDecimals(finalTotal / bill.assignedMemberIds.size)
+        } else {
+            bill.perMemberAmount
+        }
+
+        // Recalculate payment statuses based on any updated shares
+        val updatedPayments = bill.payments.mapValues { (memId, record) ->
+            val share = finalShares[memId] ?: finalPerMem
+            val status = when {
+                record.amountPaid >= share && share > 0.0 -> BillPaymentStatus.PAID
+                record.amountPaid > 0.0 -> BillPaymentStatus.PARTIALLY_PAID
+                else -> BillPaymentStatus.UNPAID
+            }
+            mapOf(
+                "memberId" to record.memberId,
+                "memberName" to record.memberName,
+                "amountPaid" to record.amountPaid,
+                "status" to status,
+                "paymentDate" to record.paymentDate,
+                "paymentMethod" to record.paymentMethod,
+                "notes" to record.notes,
+                "recordedByUid" to record.recordedByUid,
+                "recordedByName" to record.recordedByName,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        }
+
+        val payload = mapOf(
+            "title" to bill.title,
+            "deadline" to bill.deadline,
+            "notes" to bill.notes,
+            "totalAmount" to finalTotal,
+            "perMemberAmount" to finalPerMem,
+            "memberShares" to finalShares,
+            "payments" to updatedPayments,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            docRef.update(payload).await()
+            recordAuditLog(
+                messId,
+                AuditLog(
+                    action = "SHARED_BILL_UPDATED",
+                    performedByUid = uid,
+                    performedByName = auth.currentUser?.displayName ?: "Manager",
+                    details = "Updated bill details for '${bill.title}' (Total: ৳$finalTotal, Deadline: ${bill.deadline})"
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun deleteSharedBill(messId: String, billId: String, billTitle: String, totalAmount: Double) {
+        val uid = requireUserId()
+        val docRef = db.collection("messes").document(messId).collection("shared_bills").document(billId)
+        try {
+            docRef.delete().await()
+            recordAuditLog(
+                messId,
+                AuditLog(
+                    action = "SHARED_BILL_DELETED",
+                    performedByUid = uid,
+                    performedByName = auth.currentUser?.displayName ?: "Manager",
+                    details = "Deleted shared bill '$billTitle' (Total: ৳$totalAmount)"
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun recordBillPayment(
+        messId: String,
+        billId: String,
+        memberId: String,
+        memberName: String,
+        assignedShare: Double,
+        amountPaid: Double,
+        paymentMethod: String,
+        paymentDate: String,
+        notes: String
+    ) {
+        val uid = requireUserId()
+        val docRef = db.collection("messes").document(messId).collection("shared_bills").document(billId)
+
+        val status = when {
+            amountPaid >= assignedShare && assignedShare > 0.0 -> BillPaymentStatus.PAID
+            amountPaid > 0.0 -> BillPaymentStatus.PARTIALLY_PAID
+            else -> BillPaymentStatus.UNPAID
+        }
+
+        val paymentPayload = mapOf(
+            "memberId" to memberId,
+            "memberName" to memberName,
+            "amountPaid" to amountPaid,
+            "status" to status,
+            "paymentDate" to paymentDate,
+            "paymentMethod" to paymentMethod,
+            "notes" to notes,
+            "recordedByUid" to uid,
+            "recordedByName" to (auth.currentUser?.displayName ?: "Manager"),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        try {
+            docRef.update(
+                mapOf(
+                    "payments.$memberId" to paymentPayload,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            recordAuditLog(
+                messId,
+                AuditLog(
+                    action = "BILL_PAYMENT_RECORDED",
+                    performedByUid = uid,
+                    performedByName = auth.currentUser?.displayName ?: "Manager",
+                    targetMemberId = memberId,
+                    targetMemberName = memberName,
+                    details = "Recorded payment of ৳$amountPaid for $memberName (Status: $status, Method: $paymentMethod)"
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    // --- In-App Notifications ---
+    fun observeInAppNotifications(messId: String, memberId: String): Flow<List<InAppNotification>> = flow {
+        if (messId.isBlank()) {
+            emit(emptyList())
+            return@flow
+        }
+        val path = "messes/$messId/notifications"
+        emitAll(
+            db.collection("messes").document(messId).collection("notifications")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(50)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(InAppNotification::class.java).filter { notif ->
+                        notif.targetMemberId == memberId || notif.targetMemberId == "ALL" || notif.targetMemberId.isBlank()
+                    }
+                }
+                .catch { error ->
+                    handleFirestoreError(error, OperationType.LIST, path)
+                    emit(emptyList())
+                }
+        )
+    }
+
+    suspend fun markNotificationAsRead(messId: String, notificationId: String) {
+        val docRef = db.collection("messes").document(messId).collection("notifications").document(notificationId)
+        try {
+            docRef.update("isRead", true).await()
+        } catch (e: Exception) {
+            Log.w("MessRepository", "Failed to mark notification as read: ${e.message}")
+        }
+    }
+
+    suspend fun markAllNotificationsAsRead(messId: String, notificationIds: List<String>) {
+        if (notificationIds.isEmpty()) return
+        try {
+            val batch = db.batch()
+            notificationIds.forEach { id ->
+                val docRef = db.collection("messes").document(messId).collection("notifications").document(id)
+                batch.update(docRef, "isRead", true)
+            }
+            batch.commit().await()
+        } catch (e: Exception) {
+            Log.w("MessRepository", "Failed to mark all notifications as read: ${e.message}")
         }
     }
 }
